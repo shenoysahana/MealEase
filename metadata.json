@@ -1,0 +1,7 @@
+{
+  "name": "Meal Planner Wireframe",
+  "description": "A mobile wireframe prototype for a comprehensive Meal Planning Tool. It includes onboarding, a weekly planner, pantry manager, goal setting, auto-planning, shopping lists, and saved plans.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
