@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { UserPreferences } from '../types';
 
@@ -10,8 +11,35 @@ type DietOption = 'non-veg' | 'vegetarian' | 'vegan';
 type TimeOption = '15' | '30' | '60';
 type GoalOption = 'loss' | 'maintain' | 'protein';
 
+const WelcomeStep = ({ onStart }: { onStart: () => void }) => (
+    <div className="relative w-full h-full flex flex-col justify-end text-white">
+        <div className="absolute inset-0">
+            <img 
+                src="https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=1974&auto=format&fit=crop" 
+                alt="Fresh ingredients" 
+                className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
+        </div>
+        <div className="relative z-10 p-8 text-center">
+            <h1 className="text-5xl font-bold mb-2 tracking-tight">MealEase</h1>
+            <p className="text-lg text-gray-200 mb-8">Your Week, Planned in Minutes.</p>
+            <p className="text-base text-gray-300 mb-12">
+                Welcome! Let's create delicious, personalized meal plans that fit your lifestyle.
+            </p>
+            <button
+                onClick={onStart}
+                className="w-full py-4 bg-white text-gray-900 rounded-lg font-bold text-lg shadow-lg hover:bg-gray-200 transition-colors"
+            >
+                Get Started
+            </button>
+        </div>
+    </div>
+);
+
+
 const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0); // Start with welcome step
   const [preferences, setPreferences] = useState<UserPreferences>({ diet: null, cookTime: null, goal: null });
   const totalSteps = 3;
 
@@ -56,6 +84,14 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
         return null;
     }
   };
+
+  if (step === 0) {
+      return (
+          <div className="max-w-sm mx-auto bg-white min-h-screen font-sans">
+              <WelcomeStep onStart={() => setStep(1)} />
+          </div>
+      );
+  }
 
   return (
     <div className="max-w-sm mx-auto bg-white min-h-screen p-6 flex flex-col justify-between font-sans">
