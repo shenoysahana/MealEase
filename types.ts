@@ -53,6 +53,7 @@ export type WeekPlan = DayPlan[];
 export interface PantryItem {
   id: string;
   name: string;
+  category: IngredientCategory;
 }
 
 export interface SavedPlan {

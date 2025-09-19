@@ -1,11 +1,12 @@
 // Fix: Implementing a placeholder GoalsScreen component.
 import React, { useState, useMemo } from 'react';
-import { Recipe } from '../types';
+import { Recipe, UserPreferences } from '../types';
 import { PlusIcon } from './icons/Icons';
 
 interface GoalsScreenProps {
   recipes: Recipe[];
   onAddToPlan: (recipe: Recipe) => void;
+  userPreferences: UserPreferences | null;
 }
 
 type Goal = 'all' | 'low-calorie' | 'high-protein';
@@ -26,22 +27,39 @@ const getTotalCookTime = (recipe: Recipe): number => {
     return totalMinutes;
 };
 
-const GoalsScreen: React.FC<GoalsScreenProps> = ({ recipes, onAddToPlan }) => {
+const GoalsScreen: React.FC<GoalsScreenProps> = ({ recipes, onAddToPlan, userPreferences }) => {
     const [activeGoal, setActiveGoal] = useState<Goal>('all');
     const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
     
     const filteredRecipes = useMemo(() => {
-        let goalFiltered = recipes;
+        // 1. Filter by dietary preference from onboarding
+        const dietPreference = userPreferences?.diet;
+        let dietFiltered = recipes;
+        if (dietPreference && dietPreference !== 'non-veg') {
+          dietFiltered = recipes.filter(recipe => {
+            if (dietPreference === 'vegetarian') {
+              return recipe.category === 'vegetarian' || recipe.category === 'vegan';
+            }
+            if (dietPreference === 'vegan') {
+              return recipe.category === 'vegan';
+            }
+            return true;
+          });
+        }
+
+        // 2. Filter by selected goal on this screen
+        let goalFiltered = dietFiltered;
 
         switch (activeGoal) {
             case 'low-calorie':
-                goalFiltered = recipes.filter(r => r.nutrition.calories < 450);
+                goalFiltered = dietFiltered.filter(r => r.nutrition.calories < 450);
                 break;
             case 'high-protein':
-                goalFiltered = recipes.filter(r => r.nutrition.protein > 30);
+                goalFiltered = dietFiltered.filter(r => r.nutrition.protein > 30);
                 break;
         }
 
+        // 3. Filter by time
         if (timeFilter === 'all') {
             return goalFiltered;
         }
@@ -53,7 +71,7 @@ const GoalsScreen: React.FC<GoalsScreenProps> = ({ recipes, onAddToPlan }) => {
             return true;
         });
 
-    }, [recipes, activeGoal, timeFilter]);
+    }, [recipes, activeGoal, timeFilter, userPreferences]);
 
   return (
     <div className="w-full">

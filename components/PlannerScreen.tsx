@@ -81,13 +81,7 @@ const PlannerScreen: React.FC<PlannerScreenProps> = ({ weekPlan, onViewRecipe, s
             >
               <BoltIcon className="w-6 h-6 text-gray-700"/>
             </button>
-            <button 
-              onClick={onResetApp}
-              className="p-2 rounded-full hover:bg-gray-200 transition-colors"
-              aria-label="Reset App"
-            >
-              <ResetIcon className="w-6 h-6 text-gray-700"/>
-            </button>
+            
           </div>
         </div>
       </header>

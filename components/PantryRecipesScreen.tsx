@@ -1,15 +1,22 @@
 import React, { useMemo, useState } from 'react';
-import { Recipe, PantryItem } from '../types';
+import { Recipe, PantryItem, UserPreferences } from '../types';
 import { PlusIcon, ChevronLeftIcon } from './icons/Icons';
 
-interface PantryRecipesScreenProps {
-  allRecipes: Recipe[];
-  pantryItems: PantryItem[];
-  onAddToPlan: (recipe: Recipe) => void;
-  onBack: () => void;
-}
+// --- Improved Helper Functions for Ingredient Matching ---
 
-// Helper function to normalize and tokenize ingredient names for better matching.
+// A set of common words to ignore during matching to improve accuracy.
+const STOP_WORDS = new Set([
+  'a', 'an', 'and', 'clove', 'cloves', 'cup', 'cups', 'for', 'g', 'in', 'kg',
+  'l', 'lb', 'lbs', 'ml', 'of', 'on', 'or', 'oz', 'slice', 'slices', 'tbsp',
+  'the', 'tsp', 'with'
+]);
+
+/**
+ * Converts an ingredient string into a set of significant, singular keyword tokens.
+ * This process involves cleaning the string, removing stop words, and singularizing words.
+ * @param text The ingredient string (e.g., "2 slices of whole wheat bread").
+ * @returns A set of keyword tokens (e.g., {"whole", "wheat", "bread"}).
+ */
 const getTokens = (text: string): Set<string> => {
   const cleanedText = text
     .toLowerCase()
@@ -21,18 +28,13 @@ const getTokens = (text: string): Set<string> => {
     return new Set();
   }
   
-  const words = cleanedText.split(/\s+/).filter(Boolean);
+  // Split into words and filter out stop words and empty strings.
+  const words = cleanedText.split(/\s+/).filter(word => word && !STOP_WORDS.has(word));
 
+  // Convert words to their singular form for better matching.
   const singularWords = words.map(word => {
-      // Handle plurals like 'berries' -> 'berry'
-      if (word.endsWith('ies')) {
-          return word.slice(0, -3) + 'y';
-      }
-      // Handle plurals like 'tomatoes' -> 'tomato'
-      if (word.endsWith('oes')) {
-          return word.slice(0, -2);
-      }
-      // Handle common plurals like 'eggs' -> 'egg' but avoid 'ss' words like 'glass'
+      if (word.endsWith('ies')) return word.slice(0, -3) + 'y';
+      if (word.endsWith('oes')) return word.slice(0, -2);
       if (word.endsWith('s') && !word.endsWith('ss') && word.length > 2) {
           return word.slice(0, -1);
       }
@@ -41,6 +43,15 @@ const getTokens = (text: string): Set<string> => {
   
   return new Set(singularWords);
 };
+
+
+interface PantryRecipesScreenProps {
+  allRecipes: Recipe[];
+  pantryItems: PantryItem[];
+  onAddToPlan: (recipe: Recipe) => void;
+  onBack: () => void;
+  userPreferences: UserPreferences | null;
+}
 
 const getTotalCookTime = (recipe: Recipe): number => {
     let totalMinutes = 0;
@@ -59,7 +70,7 @@ const getTotalCookTime = (recipe: Recipe): number => {
 
 type TimeFilter = 'all' | 'under30' | 'under60';
 
-const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, pantryItems, onAddToPlan, onBack }) => {
+const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, pantryItems, onAddToPlan, onBack, userPreferences }) => {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
   const pantryTokensList = useMemo(() => 
@@ -68,7 +79,23 @@ const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, p
   );
 
   const suggestedRecipes = useMemo(() => {
-    const matched = allRecipes
+    // 1. Filter by dietary preference from onboarding
+    const dietPreference = userPreferences?.diet;
+    let dietFilteredRecipes = allRecipes;
+    if (dietPreference && dietPreference !== 'non-veg') {
+      dietFilteredRecipes = allRecipes.filter(recipe => {
+        if (dietPreference === 'vegetarian') {
+          return recipe.category === 'vegetarian' || recipe.category === 'vegan';
+        }
+        if (dietPreference === 'vegan') {
+          return recipe.category === 'vegan';
+        }
+        return true;
+      });
+    }
+
+    // 2. Match recipes with pantry items
+    const matched = dietFilteredRecipes
       .map(recipe => {
         const matchedIngredients = new Set<string>();
 
@@ -77,11 +104,19 @@ const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, p
           if (ingredientTokens.size === 0) return;
 
           for (const pantryTokens of pantryTokensList) {
-            const isSubset = [...pantryTokens].every(token => ingredientTokens.has(token));
+            if (pantryTokens.size === 0) continue;
+            
+            // LOGIC FIX: Implement symmetric subset check
+            // This robustly matches ingredients regardless of specificity.
+            // e.g., pantry "flour" matches recipe "all-purpose flour" and vice-versa.
+            const smallerSet = pantryTokens.size <= ingredientTokens.size ? pantryTokens : ingredientTokens;
+            const largerSet = pantryTokens.size <= ingredientTokens.size ? ingredientTokens : pantryTokens;
+            
+            const isMatch = [...smallerSet].every(token => largerSet.has(token));
 
-            if (isSubset) {
+            if (isMatch) {
               matchedIngredients.add(ingredient.name);
-              break; 
+              break; // Match found for this ingredient, move to the next one
             }
           }
         });
@@ -98,6 +133,7 @@ const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, p
           return bPercentage - aPercentage;
       });
     
+    // 3. Filter by time
     if (timeFilter === 'all') {
         return matched;
     }
@@ -109,7 +145,7 @@ const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, p
         return true;
     });
 
-  }, [allRecipes, pantryTokensList, timeFilter]);
+  }, [allRecipes, pantryTokensList, timeFilter, userPreferences]);
 
 
   return (
