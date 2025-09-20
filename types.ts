@@ -15,12 +15,16 @@ export type IngredientCategory = 'Produce' | 'Protein' | 'Dairy' | 'Pantry Stapl
 export interface Ingredient {
   name: string;
   category: IngredientCategory;
+  cuisines?: string[];
 }
+
+export type DietOption = 'vegetarian' | 'vegan' | 'non-veg';
 
 export interface Recipe {
   id: number;
   name: string;
-  category: 'vegetarian' | 'vegan' | 'non-veg';
+  category: DietOption;
+  cuisine: string;
   ingredients: Ingredient[];
   instructions: string[];
   prepTime: string;
@@ -36,7 +40,7 @@ export interface Recipe {
 }
 
 export interface Meal {
-  recipe: Recipe | null;
+  recipes: Recipe[];
 }
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner';
@@ -63,7 +67,8 @@ export interface SavedPlan {
 }
 
 export interface UserPreferences {
-    diet: 'vegetarian' | 'vegan' | 'non-veg' | null;
+    diet: DietOption[];
     cookTime: '15' | '30' | '60' | null;
     goal: 'loss' | 'maintain' | 'protein' | null;
+    cuisine: string[];
 }

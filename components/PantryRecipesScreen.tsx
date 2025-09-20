@@ -1,5 +1,6 @@
+
 import React, { useMemo, useState } from 'react';
-import { Recipe, PantryItem, UserPreferences } from '../types';
+import { Recipe, PantryItem, UserPreferences, DietOption } from '../types';
 import { PlusIcon, ChevronLeftIcon } from './icons/Icons';
 
 // --- Improved Helper Functions for Ingredient Matching ---
@@ -68,10 +69,8 @@ const getTotalCookTime = (recipe: Recipe): number => {
     return totalMinutes;
 };
 
-type TimeFilter = 'all' | 'under30' | 'under60';
 
 const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, pantryItems, onAddToPlan, onBack, userPreferences }) => {
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
   const pantryTokensList = useMemo(() => 
     pantryItems.map(item => getTokens(item.name)).filter(tokens => tokens.size > 0),
@@ -79,20 +78,17 @@ const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, p
   );
 
   const suggestedRecipes = useMemo(() => {
+    const dietMatch = (recipe: Recipe, userDiets: DietOption[]): boolean => {
+        if (!userDiets || userDiets.length === 0) {
+            return true; // No preference, show all.
+        }
+        // Strict check: recipe category must be in the selected diet list.
+        return userDiets.includes(recipe.category);
+    };
+
     // 1. Filter by dietary preference from onboarding
-    const dietPreference = userPreferences?.diet;
-    let dietFilteredRecipes = allRecipes;
-    if (dietPreference && dietPreference !== 'non-veg') {
-      dietFilteredRecipes = allRecipes.filter(recipe => {
-        if (dietPreference === 'vegetarian') {
-          return recipe.category === 'vegetarian' || recipe.category === 'vegan';
-        }
-        if (dietPreference === 'vegan') {
-          return recipe.category === 'vegan';
-        }
-        return true;
-      });
-    }
+    const dietPreference = userPreferences?.diet ?? [];
+    let dietFilteredRecipes = allRecipes.filter(recipe => dietMatch(recipe, dietPreference));
 
     // 2. Match recipes with pantry items
     const matched = dietFilteredRecipes
@@ -133,19 +129,9 @@ const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, p
           return bPercentage - aPercentage;
       });
     
-    // 3. Filter by time
-    if (timeFilter === 'all') {
-        return matched;
-    }
-    
-    return matched.filter(recipe => {
-        const totalTime = getTotalCookTime(recipe);
-        if (timeFilter === 'under30') return totalTime <= 30;
-        if (timeFilter === 'under60') return totalTime <= 60;
-        return true;
-    });
+    return matched;
 
-  }, [allRecipes, pantryTokensList, timeFilter, userPreferences]);
+  }, [allRecipes, pantryTokensList, userPreferences]);
 
 
   return (
@@ -157,11 +143,6 @@ const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, p
         <h1 className="text-2xl font-bold text-gray-800">Pantry Recipes</h1>
       </header>
       <div className="p-4">
-        <div className="flex gap-2 mb-4">
-            <TimeFilterButton filter="all" activeFilter={timeFilter} setFilter={setTimeFilter}>All</TimeFilterButton>
-            <TimeFilterButton filter="under30" activeFilter={timeFilter} setFilter={setTimeFilter}>&lt; 30 min</TimeFilterButton>
-            <TimeFilterButton filter="under60" activeFilter={timeFilter} setFilter={setTimeFilter}>&lt; 60 min</TimeFilterButton>
-        </div>
         {suggestedRecipes.length > 0 ? (
           <div className="grid grid-cols-2 gap-4">
             {suggestedRecipes.map((recipe) => (
@@ -196,17 +177,5 @@ const PantryRecipesScreen: React.FC<PantryRecipesScreenProps> = ({ allRecipes, p
     </div>
   );
 };
-
-const TimeFilterButton: React.FC<{filter: TimeFilter, activeFilter: TimeFilter, setFilter: (f: TimeFilter) => void, children: React.ReactNode}> = ({filter, activeFilter, setFilter, children}) => {
-    const isActive = filter === activeFilter;
-    return (
-        <button 
-            onClick={() => setFilter(filter)}
-            className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${isActive ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 border'}`}
-        >
-            {children}
-        </button>
-    )
-}
 
 export default PantryRecipesScreen;

@@ -1,6 +1,7 @@
+
 // Fix: Implementing a placeholder GoalsScreen component.
 import React, { useState, useMemo } from 'react';
-import { Recipe, UserPreferences } from '../types';
+import { Recipe, UserPreferences, DietOption } from '../types';
 import { PlusIcon } from './icons/Icons';
 
 interface GoalsScreenProps {
@@ -10,7 +11,6 @@ interface GoalsScreenProps {
 }
 
 type Goal = 'all' | 'low-calorie' | 'high-protein';
-type TimeFilter = 'all' | 'under30' | 'under60';
 
 const getTotalCookTime = (recipe: Recipe): number => {
     let totalMinutes = 0;
@@ -29,23 +29,19 @@ const getTotalCookTime = (recipe: Recipe): number => {
 
 const GoalsScreen: React.FC<GoalsScreenProps> = ({ recipes, onAddToPlan, userPreferences }) => {
     const [activeGoal, setActiveGoal] = useState<Goal>('all');
-    const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
     
     const filteredRecipes = useMemo(() => {
+        const dietMatch = (recipe: Recipe, userDiets: DietOption[]): boolean => {
+            if (!userDiets || userDiets.length === 0) {
+                return true; // No preference, show all.
+            }
+            // Strict check: recipe category must be in the selected diet list.
+            return userDiets.includes(recipe.category);
+        };
+        
         // 1. Filter by dietary preference from onboarding
-        const dietPreference = userPreferences?.diet;
-        let dietFiltered = recipes;
-        if (dietPreference && dietPreference !== 'non-veg') {
-          dietFiltered = recipes.filter(recipe => {
-            if (dietPreference === 'vegetarian') {
-              return recipe.category === 'vegetarian' || recipe.category === 'vegan';
-            }
-            if (dietPreference === 'vegan') {
-              return recipe.category === 'vegan';
-            }
-            return true;
-          });
-        }
+        const dietPreference = userPreferences?.diet ?? [];
+        let dietFiltered = recipes.filter(recipe => dietMatch(recipe, dietPreference));
 
         // 2. Filter by selected goal on this screen
         let goalFiltered = dietFiltered;
@@ -59,19 +55,9 @@ const GoalsScreen: React.FC<GoalsScreenProps> = ({ recipes, onAddToPlan, userPre
                 break;
         }
 
-        // 3. Filter by time
-        if (timeFilter === 'all') {
-            return goalFiltered;
-        }
+        return goalFiltered;
 
-        return goalFiltered.filter(recipe => {
-            const totalTime = getTotalCookTime(recipe);
-            if (timeFilter === 'under30') return totalTime <= 30;
-            if (timeFilter === 'under60') return totalTime <= 60;
-            return true;
-        });
-
-    }, [recipes, activeGoal, timeFilter, userPreferences]);
+    }, [recipes, activeGoal, userPreferences]);
 
   return (
     <div className="w-full">
@@ -84,11 +70,6 @@ const GoalsScreen: React.FC<GoalsScreenProps> = ({ recipes, onAddToPlan, userPre
                 <GoalButton goal="all" activeGoal={activeGoal} setGoal={setActiveGoal}>All</GoalButton>
                 <GoalButton goal="low-calorie" activeGoal={activeGoal} setGoal={setActiveGoal}>Low Calorie</GoalButton>
                 <GoalButton goal="high-protein" activeGoal={activeGoal} setGoal={setActiveGoal}>High Protein</GoalButton>
-            </div>
-            <div className="flex gap-2">
-                <TimeFilterButton filter="all" activeFilter={timeFilter} setFilter={setTimeFilter}>All Times</TimeFilterButton>
-                <TimeFilterButton filter="under30" activeFilter={timeFilter} setFilter={setTimeFilter}>&lt; 30 min</TimeFilterButton>
-                <TimeFilterButton filter="under60" activeFilter={timeFilter} setFilter={setTimeFilter}>&lt; 60 min</TimeFilterButton>
             </div>
         </div>
          <div className="space-y-4">
@@ -122,18 +103,6 @@ const GoalButton: React.FC<{goal: Goal, activeGoal: Goal, setGoal: (g: Goal) => 
     return (
         <button 
             onClick={() => setGoal(goal)}
-            className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${isActive ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 border'}`}
-        >
-            {children}
-        </button>
-    )
-}
-
-const TimeFilterButton: React.FC<{filter: TimeFilter, activeFilter: TimeFilter, setFilter: (f: TimeFilter) => void, children: React.ReactNode}> = ({filter, activeFilter, setFilter, children}) => {
-    const isActive = filter === activeFilter;
-    return (
-        <button 
-            onClick={() => setFilter(filter)}
             className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${isActive ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 border'}`}
         >
             {children}

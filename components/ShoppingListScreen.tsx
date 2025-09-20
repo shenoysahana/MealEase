@@ -10,9 +10,9 @@ interface ShoppingListScreenProps {
 const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ weekPlan, pantryItems }) => {
   const shoppingList = useMemo(() => {
     const allIngredients: Ingredient[] = weekPlan.flatMap(day => [
-      ...(day.breakfast.recipe?.ingredients ?? []),
-      ...(day.lunch.recipe?.ingredients ?? []),
-      ...(day.dinner.recipe?.ingredients ?? []),
+      ...(day.breakfast.recipes.flatMap(r => r.ingredients)),
+      ...(day.lunch.recipes.flatMap(r => r.ingredients)),
+      ...(day.dinner.recipes.flatMap(r => r.ingredients)),
     ]);
 
     // Create a map of unique ingredients to avoid duplicates

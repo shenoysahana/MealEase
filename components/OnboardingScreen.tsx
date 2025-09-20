@@ -1,15 +1,13 @@
 
 
+
+
 import React, { useState } from 'react';
-import { UserPreferences } from '../types';
+import { UserPreferences, DietOption } from '../types';
 
 interface OnboardingScreenProps {
   onComplete: (preferences: UserPreferences) => void;
 }
-
-type DietOption = 'non-veg' | 'vegetarian' | 'vegan';
-type TimeOption = '15' | '30' | '60';
-type GoalOption = 'loss' | 'maintain' | 'protein';
 
 const WelcomeStep = ({ onStart }: { onStart: () => void }) => (
     <div className="relative w-full h-full flex flex-col justify-end text-white">
@@ -40,8 +38,8 @@ const WelcomeStep = ({ onStart }: { onStart: () => void }) => (
 
 const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
   const [step, setStep] = useState(0); // Start with welcome step
-  const [preferences, setPreferences] = useState<UserPreferences>({ diet: null, cookTime: null, goal: null });
-  const totalSteps = 3;
+  const [preferences, setPreferences] = useState<UserPreferences>({ diet: [], cookTime: null, goal: null, cuisine: [] });
+  const totalSteps = 4;
 
   const nextStep = () => setStep((prev) => Math.min(prev + 1, totalSteps));
   const prevStep = () => setStep((prev) => Math.max(prev - 1, 1));
@@ -49,6 +47,34 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
   const handleSelect = (key: keyof UserPreferences, value: string) => {
     setPreferences(prev => ({ ...prev, [key]: value }));
   }
+
+  const handleDietSelect = (value: DietOption) => {
+    setPreferences(prev => {
+        const newDiet = prev.diet.includes(value)
+            ? prev.diet.filter(d => d !== value)
+            : [...prev.diet, value];
+        return { ...prev, diet: newDiet };
+    });
+  };
+
+  const handleCuisineSelect = (value: string) => {
+    setPreferences(prev => {
+        const currentCuisine = prev.cuisine;
+        let newCuisine: string[];
+
+        if (value === 'Any') {
+            newCuisine = currentCuisine.includes('Any') ? [] : ['Any'];
+        } else {
+            const withoutAny = currentCuisine.filter(c => c !== 'Any');
+            if (withoutAny.includes(value)) {
+                newCuisine = withoutAny.filter(c => c !== value);
+            } else {
+                newCuisine = [...withoutAny, value];
+            }
+        }
+        return { ...prev, cuisine: newCuisine };
+    });
+  };
 
   const handleFinish = () => {
     onComplete(preferences);
@@ -59,12 +85,26 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
       case 1:
         return (
           <OnboardingStep title="Dietary Preferences">
-            <OptionButton selected={preferences.diet === 'non-veg'} onClick={() => handleSelect('diet', 'non-veg')}>Non-Vegetarian</OptionButton>
-            <OptionButton selected={preferences.diet === 'vegetarian'} onClick={() => handleSelect('diet', 'vegetarian')}>Vegetarian</OptionButton>
-            <OptionButton selected={preferences.diet === 'vegan'} onClick={() => handleSelect('diet', 'vegan')}>Vegan</OptionButton>
+            <p className="text-sm text-gray-500 mb-4 -mt-4">Select all that apply.</p>
+            <OptionButton selected={preferences.diet.includes('non-veg')} onClick={() => handleDietSelect('non-veg')}>Non-Vegetarian</OptionButton>
+            <OptionButton selected={preferences.diet.includes('vegetarian')} onClick={() => handleDietSelect('vegetarian')}>Vegetarian</OptionButton>
+            <OptionButton selected={preferences.diet.includes('vegan')} onClick={() => handleDietSelect('vegan')}>Vegan</OptionButton>
           </OnboardingStep>
         );
       case 2:
+        return (
+          <OnboardingStep title="Preferred Cuisines">
+            <p className="text-sm text-gray-500 mb-4 -mt-4">Select all that apply. 'Any' includes all cuisines.</p>
+            <OptionButton selected={preferences.cuisine.includes('Any')} onClick={() => handleCuisineSelect('Any')}>Any</OptionButton>
+            <OptionButton selected={preferences.cuisine.includes('American')} onClick={() => handleCuisineSelect('American')}>American</OptionButton>
+            <OptionButton selected={preferences.cuisine.includes('Italian')} onClick={() => handleCuisineSelect('Italian')}>Italian</OptionButton>
+            <OptionButton selected={preferences.cuisine.includes('Indian')} onClick={() => handleCuisineSelect('Indian')}>Indian</OptionButton>
+            <OptionButton selected={preferences.cuisine.includes('Mexican')} onClick={() => handleCuisineSelect('Mexican')}>Mexican</OptionButton>
+            <OptionButton selected={preferences.cuisine.includes('Chinese')} onClick={() => handleCuisineSelect('Chinese')}>Chinese</OptionButton>
+            <OptionButton selected={preferences.cuisine.includes('French')} onClick={() => handleCuisineSelect('French')}>French</OptionButton>
+          </OnboardingStep>
+        );
+      case 3:
         return (
           <OnboardingStep title="Cooking Time Per Meal">
             <OptionButton selected={preferences.cookTime === '15'} onClick={() => handleSelect('cookTime', '15')}>15 minutes</OptionButton>
@@ -72,7 +112,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
             <OptionButton selected={preferences.cookTime === '60'} onClick={() => handleSelect('cookTime', '60')}>60 minutes</OptionButton>
           </OnboardingStep>
         );
-      case 3:
+      case 4:
         return (
           <OnboardingStep title="Health Goals">
             <OptionButton selected={preferences.goal === 'loss'} onClick={() => handleSelect('goal', 'loss')}>Weight Loss</OptionButton>

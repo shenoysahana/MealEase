@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 // Fix: Import Gemini AI SDK and Type enum.
 import { GoogleGenAI, Type } from "@google/genai";
-import { Screen, WeekPlan, Recipe, PantryItem, UserPreferences, SavedPlan, MealType, IngredientCategory } from './types';
-import { MOCK_RECIPES, EMPTY_WEEK_PLAN } from './data';
+import { Screen, WeekPlan, Recipe, PantryItem, UserPreferences, SavedPlan, MealType, IngredientCategory, DietOption } from './types';
+import { MOCK_RECIPES, EMPTY_WEEK_PLAN, PRESET_PANTRY_ITEMS } from './data';
 
 // Import components
 import OnboardingScreen from './components/OnboardingScreen';
@@ -163,10 +163,8 @@ const App: React.FC = () => {
     const [pantryItems, setPantryItems] = useState<PantryItem[]>(() => {
         try {
             const savedItems = localStorage.getItem('pantryItems');
-            // If there are saved items, parse them. Otherwise, start with an empty array for a new user.
             return savedItems ? JSON.parse(savedItems) : [];
         } catch {
-            // In case of a parsing error, also default to an empty array.
             return [];
         }
     });
@@ -186,6 +184,7 @@ const App: React.FC = () => {
     const [loadingMessage, setLoadingMessage] = useState('');
     const [toastMessage, setToastMessage] = useState<string>('');
     const [modal, setModal] = useState<ModalState>(null);
+
 
     // Fix: Initialize Gemini AI client per coding guidelines.
     // The API key is accessed from environment variables and is assumed to be set.
@@ -213,11 +212,61 @@ const App: React.FC = () => {
     const showToast = (message: string) => {
         setToastMessage(message);
     };
+    
+    // --- Onboarding & Pantry Population ---
+    const populateInitialPantry = (prefs: UserPreferences) => {
+        try {
+            const savedItems = localStorage.getItem('pantryItems');
+            if (savedItems && JSON.parse(savedItems).length > 0) {
+              return; // Don't overwrite existing pantry
+            }
+        } catch {
+            // Error parsing, can proceed to populate
+        }
+
+        const newPantryItems: PantryItem[] = [];
+        const userCuisines = new Set(prefs.cuisine);
+
+        const allPresetItems = Object.values(PRESET_PANTRY_ITEMS).flat();
+
+        allPresetItems.forEach(item => {
+            const isCuisineMatch = item.cuisines?.includes('Any') || item.cuisines?.some(c => userCuisines.has(c));
+            if (isCuisineMatch) {
+                let shouldAdd = true;
+                const isVegetarian = prefs.diet.includes('vegetarian');
+                const isVegan = prefs.diet.includes('vegan');
+
+                if (isVegan && item.category === 'Dairy') {
+                    shouldAdd = false;
+                }
+                if ((isVegan || isVegetarian) && item.category === 'Protein') {
+                    const meatKeywords = ['Chicken', 'Beef', 'Pork', 'Lamb', 'Fish', 'Salmon', 'Shrimp', 'Bacon', 'Tuna'];
+                    if (meatKeywords.some(m => item.name.includes(m))) {
+                        shouldAdd = false;
+                    }
+                }
+
+                if (shouldAdd) {
+                    newPantryItems.push({
+                        id: `${item.name}-${Date.now()}-${Math.random()}`,
+                        name: item.name,
+                        category: item.category,
+                    });
+                }
+            }
+        });
+
+        setPantryItems(newPantryItems);
+        showToast("We've pre-filled your pantry based on your preferences!");
+    };
+
 
     // Handler Functions
     const handleOnboardingComplete = (preferences: UserPreferences) => {
         setUserPreferences(preferences);
         setShowOnboarding(false);
+        // Populate pantry for the first time
+        populateInitialPantry(preferences);
     };
 
     const handleViewRecipe = (recipe: Recipe) => {
@@ -237,6 +286,8 @@ const App: React.FC = () => {
     };
 
     const handleAddItem = (itemName: string, category: IngredientCategory) => {
+        // Prevent duplicates
+        if (pantryItems.some(item => item.name === itemName)) return;
         const newItem: PantryItem = { id: new Date().toISOString(), name: itemName, category };
         setPantryItems(prev => [...prev, newItem]);
     };
@@ -289,7 +340,9 @@ const App: React.FC = () => {
         if (!recipeToAddToPlan) return;
         const newPlan = weekPlan.map(dayPlan => {
             if (dayPlan.day === day) {
-                return { ...dayPlan, [mealType]: { recipe: recipeToAddToPlan } };
+                // Add the new recipe to the existing array of recipes for that meal
+                const updatedRecipes = [...dayPlan[mealType].recipes, recipeToAddToPlan];
+                return { ...dayPlan, [mealType]: { recipes: updatedRecipes } };
             }
             return dayPlan;
         });
@@ -297,11 +350,12 @@ const App: React.FC = () => {
         setRecipeToAddToPlan(null);
     };
 
-    const handleRemoveRecipe = (day: string, mealType: MealType) => {
-        setWeekPlan(currentPlan => 
+    const handleRemoveRecipe = (day: string, mealType: MealType, recipeId: number) => {
+        setWeekPlan(currentPlan =>
             currentPlan.map(dayPlan => {
                 if (dayPlan.day === day) {
-                    return { ...dayPlan, [mealType]: { recipe: null } };
+                    const updatedRecipes = dayPlan[mealType].recipes.filter(recipe => recipe.id !== recipeId);
+                    return { ...dayPlan, [mealType]: { recipes: updatedRecipes } };
                 }
                 return dayPlan;
             })
@@ -314,6 +368,33 @@ const App: React.FC = () => {
             window.location.reload();
         }
     };
+    
+    // --- Optimization: Memoize available recipes for Auto-Plan ---
+    const availableRecipes = useMemo(() => {
+        if (!userPreferences) return [];
+        
+        const dietMatch = (recipe: Recipe, userDiets: DietOption[]): boolean => {
+            if (!userDiets || userDiets.length === 0) return true;
+            return userDiets.includes(recipe.category);
+        };
+
+        return MOCK_RECIPES.filter(recipe => {
+            const dietPreference = userPreferences.diet;
+            if (!dietMatch(recipe, dietPreference)) return false;
+
+            const cuisinePreference = userPreferences.cuisine;
+            if (cuisinePreference && cuisinePreference.length > 0 && !cuisinePreference.includes('Any')) {
+                if (!cuisinePreference.includes(recipe.cuisine)) return false;
+            }
+
+            const timePreference = userPreferences.cookTime;
+            if (timePreference) {
+                const maxTime = parseInt(timePreference, 10);
+                if (getTotalCookTime(recipe) > maxTime) return false;
+            }
+            return true;
+        });
+    }, [userPreferences]);
 
     const handleAutoPlan = async () => {
         if (!userPreferences) {
@@ -326,33 +407,7 @@ const App: React.FC = () => {
         setIsLoading(true);
         setLoadingMessage("Generating your personalized meal plan...");
 
-        // Pre-filter recipes based on user preferences to ensure logical correctness.
-        const availableRecipes = MOCK_RECIPES.filter(recipe => {
-            // Diet filter
-            const dietPreference = userPreferences.diet;
-            let dietMatch = true;
-            if (dietPreference && dietPreference !== 'non-veg') {
-                if (dietPreference === 'vegetarian') {
-                    dietMatch = recipe.category === 'vegetarian' || recipe.category === 'vegan';
-                } else if (dietPreference === 'vegan') {
-                    dietMatch = recipe.category === 'vegan';
-                }
-            }
-
-            // Cook time filter
-            const timePreference = userPreferences.cookTime;
-            let timeMatch = true;
-            if (timePreference) {
-                const maxTime = parseInt(timePreference, 10);
-                const recipeTime = getTotalCookTime(recipe);
-                timeMatch = recipeTime <= maxTime;
-            }
-
-            return dietMatch && timeMatch;
-        });
-        
-        // Check if there are enough recipes to create a varied plan.
-        if (availableRecipes.length < 3) {
+        if (availableRecipes.length < 7) { 
              showToast("Not enough recipes match your criteria. Try relaxing your preferences.");
              setIsLoading(false);
              setLoadingMessage('');
@@ -365,23 +420,22 @@ const App: React.FC = () => {
             id: r.id,
             name: r.name,
             category: r.category,
-            cookTime: r.cookTime,
-            prepTime: r.prepTime,
-            nutrition: r.nutrition,
-            ingredients: r.ingredients.map(i => i.name.split(',')[0]),
+            cuisine: r.cuisine,
         }));
 
         const prompt = `
             You are a meal planning assistant. Create a 7-day meal plan (Monday to Sunday) for a user with these preferences:
-            - Diet: ${userPreferences.diet || 'any'}
+            - Diet: ${userPreferences.diet.join(', ') || 'any'}
+            - Cuisine: ${userPreferences.cuisine.join(', ') || 'any'}
             - Max cooking time per meal: ${userPreferences.cookTime || 'any'} minutes
             - Health goal: ${userPreferences.goal || 'any'}
 
             The user has these ingredients in their pantry: ${pantryItems.map(p => p.name).join(', ')}. Please prioritize recipes that use these ingredients.
             
-            Please create a varied and balanced plan. Avoid using the same recipe multiple times. Try to vary the main ingredients (e.g., don't use chicken every day) and the type of dish (e.g., mix salads, bowls, and cooked meals).
+            Please create a highly varied and balanced plan. DO NOT repeat any recipe across the entire week.
+            For each meal (breakfast, lunch, dinner), you can assign one or more dishes.
 
-            Here is a list of available recipes that ALREADY MATCH the user's diet and time preferences. You MUST choose from this list only:
+            Here is a list of available recipes that ALREADY MATCH the user's preferences. You MUST choose from this list only:
             ${JSON.stringify(recipesForPrompt)}
 
             Your response MUST be a JSON array that strictly follows this schema. Only output the JSON array. Do not include any other text, explanations, or markdown.
@@ -393,16 +447,15 @@ const App: React.FC = () => {
                 type: Type.OBJECT,
                 properties: {
                     day: { type: Type.STRING },
-                    breakfast_recipe_id: { type: Type.INTEGER, description: "ID of the recipe for breakfast. Use 0 for no meal." },
-                    lunch_recipe_id: { type: Type.INTEGER, description: "ID of the recipe for lunch. Use 0 for no meal." },
-                    dinner_recipe_id: { type: Type.INTEGER, description: "ID of the recipe for dinner. Use 0 for no meal." },
+                    breakfast_recipe_ids: { type: Type.ARRAY, items: { type: Type.INTEGER }, description: "Array of recipe IDs for breakfast. Use empty array for no meal." },
+                    lunch_recipe_ids: { type: Type.ARRAY, items: { type: Type.INTEGER }, description: "Array of recipe IDs for lunch. Use empty array for no meal." },
+                    dinner_recipe_ids: { type: Type.ARRAY, items: { type: Type.INTEGER }, description: "Array of recipe IDs for dinner. Use empty array for no meal." },
                 },
-                required: ['day', 'breakfast_recipe_id', 'lunch_recipe_id', 'dinner_recipe_id']
+                required: ['day', 'breakfast_recipe_ids', 'lunch_recipe_ids', 'dinner_recipe_ids']
             }
         };
 
         try {
-            // Fix: Use Gemini API to generate content with a JSON schema.
             const response = await ai.models.generateContent({
                 model: "gemini-2.5-flash",
                 contents: prompt,
@@ -412,21 +465,60 @@ const App: React.FC = () => {
                 },
             });
 
-            // Fix: Get text from response and parse it.
             const generatedPlanRaw = JSON.parse(response.text);
 
             if (!Array.isArray(generatedPlanRaw)) {
                 throw new Error("API returned non-array response");
             }
 
-            const newWeekPlan: WeekPlan = generatedPlanRaw.map((day: any) => ({
+            const initialPlan: WeekPlan = generatedPlanRaw.map((day: any) => ({
                 day: day.day,
-                breakfast: { recipe: recipeMap.get(day.breakfast_recipe_id) || null },
-                lunch: { recipe: recipeMap.get(day.lunch_recipe_id) || null },
-                dinner: { recipe: recipeMap.get(day.dinner_recipe_id) || null },
+                breakfast: { recipes: (day.breakfast_recipe_ids || []).map((id: number) => recipeMap.get(id)).filter(Boolean) as Recipe[] },
+                lunch: { recipes: (day.lunch_recipe_ids || []).map((id: number) => recipeMap.get(id)).filter(Boolean) as Recipe[] },
+                dinner: { recipes: (day.dinner_recipe_ids || []).map((id: number) => recipeMap.get(id)).filter(Boolean) as Recipe[] },
             }));
 
-            setWeekPlan(newWeekPlan);
+            // Post-processing to guarantee no recipe repetitions
+            const usedRecipeIds = new Set<number>();
+            const availablePool = [...availableRecipes];
+            const getUnusedRecipe = (): Recipe | null => {
+                for (let i = 0; i < availablePool.length; i++) {
+                    const recipe = availablePool[i];
+                    if (!usedRecipeIds.has(recipe.id)) {
+                        availablePool.splice(i, 1);
+                        return recipe;
+                    }
+                }
+                return null;
+            };
+
+            const finalPlan = initialPlan.map(dayPlan => {
+                const processMeal = (meal: { recipes: Recipe[] }): { recipes: Recipe[] } => {
+                    const uniqueRecipes: Recipe[] = [];
+                    for (const recipe of meal.recipes) {
+                        if (!recipe) continue;
+                        if (!usedRecipeIds.has(recipe.id)) {
+                            uniqueRecipes.push(recipe);
+                            usedRecipeIds.add(recipe.id);
+                        } else {
+                            const replacement = getUnusedRecipe();
+                            if (replacement) {
+                                uniqueRecipes.push(replacement);
+                                usedRecipeIds.add(replacement.id);
+                            }
+                        }
+                    }
+                    return { recipes: uniqueRecipes };
+                };
+                return {
+                    ...dayPlan,
+                    breakfast: processMeal(dayPlan.breakfast),
+                    lunch: processMeal(dayPlan.lunch),
+                    dinner: processMeal(dayPlan.dinner),
+                };
+            });
+
+            setWeekPlan(finalPlan);
             setActiveScreen(Screen.Planner);
 
         } catch (error) {
@@ -481,7 +573,7 @@ const App: React.FC = () => {
             case Screen.AutoPlan:
                 return <AutoPlanScreen onAutoPlan={handleAutoPlan} />;
             default:
-                return <PlannerScreen weekPlan={weekPlan} onViewRecipe={handleViewRecipe} setActiveScreen={setActiveScreen} onSavePlan={() => setModal({type: 'save'})} onRemoveRecipe={handleRemoveRecipe} onResetApp={handleResetApp}/>;
+                return <PlannerScreen weekPlan={weekPlan} onViewRecipe={handleViewRecipe} setActiveScreen={setActiveScreen} onSavePlan={() => setModal({type: 'save'})} onRemoveRecipe={handleRemoveRecipe} onResetApp={handleResetApp} />;
         }
     };
 
